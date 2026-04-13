@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Water Network Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Barlow',sans-serif; background:#0a0f1a; color:#c8dff0; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+  #header {
+    background:linear-gradient(90deg,#0d1b2a,#112233);
+    border-bottom:1px solid #1e3a5f;
+    padding:10px 18px; display:flex; align-items:center; gap:14px;
+    flex-shrink:0; z-index:1000;
+  }
+  #header h1 { font-family:'Share Tech Mono',monospace; font-size:15px; letter-spacing:2px; color:#4fc3f7; text-transform:uppercase; }
+  #header p  { font-size:11px; color:#607d8b; margin-top:1px; }
+  .status-bar { margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+  .pill { font-family:'Share Tech Mono',monospace; font-size:10px; padding:3px 10px; border-radius:20px; letter-spacing:1px; }
+  .pill.live   { background:#0d3b1e; color:#4caf50; border:1px solid #2e7d32; }
+  .pill.count  { background:#0d2b3b; color:#4fc3f7; border:1px solid #1565c0; }
+  .pill.zoom   { background:#1a1a0d; color:#ffa726; border:1px solid #e65100; }
+
+  /* Layer controls */
+  #controls {
+    position:absolute; top:70px; left:12px; z-index:900;
+    background:rgba(10,15,26,0.92); border:1px solid #1e3a5f;
+    border-radius:8px; padding:12px 14px; min-width:165px; backdrop-filter:blur(6px);
+  }
+  #controls h3 { font-family:'Share Tech Mono',monospace; font-size:10px; letter-spacing:2px; color:#4fc3f7; margin-bottom:10px; text-transform:uppercase; }
+  .toggle-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:12px; color:#90a4ae; cursor:pointer; user-select:none; }
+  .toggle-row input { accent-color:#4fc3f7; cursor:pointer; }
+  .zoom-hint { font-size:10px; color:#455a64; margin-top:4px; font-style:italic; padding-left:20px; }
+
+  #map { flex:1; width:100%; }
+
+  /* Legend */
+  #legend {
+    position:absolute; bottom:28px; right:12px; z-index:900;
+    background:rgba(10,15,26,0.92); border:1px solid #1e3a5f;
+    border-radius:8px; padding:12px 16px; min-width:200px;
+    backdrop-filter:blur(6px); max-height:calc(100vh - 120px); overflow-y:auto;
+  }
+  #legend h3 { font-family:'Share Tech Mono',monospace; font-size:10px; letter-spacing:2px; color:#4fc3f7; margin-bottom:10px; text-transform:uppercase; }
+  .legend-section { font-family:'Share Tech Mono',monospace; font-size:9px; color:#4fc3f7; letter-spacing:1px; margin:10px 0 6px; opacity:0.7; }
+  .legend-row { display:flex; align-items:center; gap:9px; margin-bottom:6px; font-size:11px; color:#90a4ae; }
+  .legend-line { width:28px; height:4px; border-radius:2px; flex-shrink:0; }
+  .legend-divider { border-top:1px solid #1e3a5f; margin:8px 0; }
+
+  /* Popups */
+  .leaflet-popup-content-wrapper { background:#0d1b2a!important; border:1px solid #1e3a5f!important; border-radius:8px!important; color:#c8dff0!important; box-shadow:0 4px 24px rgba(0,0,0,0.6)!important; }
+  .leaflet-popup-tip { background:#0d1b2a!important; }
+  .leaflet-popup-content { margin:12px 16px!important; font-size:13px; min-width:180px; }
+  .popup-title { font-family:'Share Tech Mono',monospace; font-size:11px; color:#4fc3f7; letter-spacing:1px; margin-bottom:8px; text-transform:uppercase; }
+  .popup-row { display:flex; justify-content:space-between; gap:16px; margin-bottom:4px; }
+  .popup-label { color:#607d8b; font-size:11px; }
+  .popup-value { color:#e0f0ff; font-size:11px; font-weight:600; text-align:right; }
+
+  /* Loading */
+  #loading { position:absolute; inset:0; background:#0a0f1a; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:2000; gap:16px; }
+  #loading p { font-family:'Share Tech Mono',monospace; font-size:12px; color:#4fc3f7; letter-spacing:2px; animation:blink 1.2s infinite; }
+  #loading-detail { font-size:10px!important; color:#607d8b!important; animation:none!important; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .spinner { width:36px; height:36px; border:3px solid #1e3a5f; border-top-color:#4fc3f7; border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  #notice {
+    position:absolute; top:70px; left:50%; transform:translateX(-50%);
+    z-index:1100; background:rgba(13,27,42,0.96); border:1px solid #f59e0b;
+    border-radius:8px; padding:10px 18px; font-size:11px; color:#fcd34d;
+    font-family:'Share Tech Mono',monospace; letter-spacing:1px; display:none;
+    text-align:center; white-space:nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+    <path d="M14 3 C14 3 5 13 5 18 a9 9 0 0 0 18 0 C23 13 14 3 14 3Z" fill="#1565c0" stroke="#4fc3f7" stroke-width="1.2"/>
+    <path d="M10 19 Q14 16 18 19" stroke="#4fc3f7" stroke-width="1" fill="none" stroke-linecap="round"/>
+  </svg>
+  <div>
+    <h1>Water Network Map</h1>
+    <p>Trowbridge Model — Asset &amp; Infrastructure View</p>
+  </div>
+  <div class="status-bar">
+    <span class="pill live">● LIVE</span>
+    <span class="pill count" id="asset-count">Loading...</span>
+    <span class="pill zoom" id="zoom-pill">ZOOM IN FOR VALVES</span>
+  </div>
+</div>
+
+<div id="controls">
+  <h3>Layers</h3>
+  <label class="toggle-row"><input type="checkbox" id="tog-pipes" checked> Pipes by Area</label>
+  <label class="toggle-row"><input type="checkbox" id="tog-valves" checked> Valves</label>
+  <div class="zoom-hint">Valves visible at ~300m zoom</div>
+  <label class="toggle-row" style="margin-top:8px"><input type="checkbox" id="tog-points" checked> Assets (Sheet)</label>
+</div>
+
+<div id="map"></div>
+
+<div id="legend">
+  <h3>Legend</h3>
+  <div class="legend-section">── PIPES BY AREA ──</div>
+  <div id="pipe-legend"><div style="color:#607d8b;font-size:10px">Loading...</div></div>
+  <div class="legend-divider"></div>
+  <div class="legend-section">── VALVES (zoom ≥15) ──</div>
+  <div class="legend-row"><div class="legend-line" style="background:#4caf50;height:5px"></div> Open (100%)</div>
+  <div class="legend-row"><div class="legend-line" style="background:#ff5252;height:5px"></div> Closed (0%)</div>
+  <div class="legend-row"><div class="legend-line" style="background:#ffa726;height:5px"></div> Throttled (1–99%)</div>
+  <div class="legend-row"><div class="legend-line" style="background:#78909c;height:5px"></div> Unknown</div>
+  <div class="legend-divider"></div>
+  <div class="legend-section">── SHEET ASSETS ──</div>
+  <div class="legend-row">
+    <svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#ff5252" stroke="white" stroke-width="1.5"/><text x="7" y="11" text-anchor="middle" font-size="8" fill="white" font-weight="bold">H</text></svg>
+    Hydrant
+  </div>
+  <div class="legend-row">
+    <svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#40c4ff" stroke="white" stroke-width="1.5"/><circle cx="7" cy="7" r="2.5" fill="white"/></svg>
+    Other Asset
+  </div>
+</div>
+
+<div id="notice"></div>
+<div id="loading">
+  <div class="spinner"></div>
+  <p>LOADING NETWORK DATA...</p>
+  <p id="loading-detail">Initialising map</p>
+</div>
+
+<script>
+// ============================================================
+//  ⚙️  CONFIGURATION
+// ============================================================
+const CONFIG = {
+  SHEET_CSV_URL:      "YOUR_GOOGLE_SHEET_CSV_URL_HERE",
+  COL_LAT:            "Latitude",
+  COL_LNG:            "Longitude",
+  COL_NAME:           "Name",
+  COL_TYPE:           "Type",
+  COL_STATUS:         "Status",
+
+  PIPES_GEOJSON_URL:  "https://gist.githubusercontent.com/IBonsaiBob/f7b883b343ef87f037388431ba30afe9/raw/967f4bf60be1406b0403b242a8e05e4f7e0a089c/pipes.geojson",
+  VALVES_GEOJSON_URL: "https://raw.githubusercontent.com/IBonsaiBob/water-network/refs/heads/main/VALVES.json",
+
+  MAP_CENTER:   [51.32, -2.21],
+  MAP_ZOOM:     13,
+  VALVE_ZOOM:   15,   // valves appear at this zoom level and above
+};
+
+// ============================================================
+//  Colour helpers
+// ============================================================
+const AREA_PALETTE = [
+  "#4fc3f7","#ef5350","#66bb6a","#ffa726","#ab47bc",
+  "#26c6da","#ff7043","#9ccc65","#ffca28","#ec407a",
+  "#42a5f5","#26a69a","#d4e157","#8d6e63","#78909c",
+  "#f06292","#aed581","#4dd0e1","#ffb74d","#ba68c8",
+  "#80cbc4","#ce93d8","#ef9a9a","#fff176","#80deea",
+];
+const areaColorMap = {};
+let areaColorIdx = 0;
+
+function getAreaColor(area) {
+  const key = (area || "Unknown").trim();
+  if (!areaColorMap[key]) {
+    areaColorMap[key] = AREA_PALETTE[areaColorIdx % AREA_PALETTE.length];
+    areaColorIdx++;
+  }
+  return areaColorMap[key];
+}
+
+function getValveColor(v) {
+  const n = parseFloat(v);
+  if (isNaN(n))  return "#78909c";
+  if (n >= 100)  return "#4caf50";
+  if (n <= 0)    return "#ff5252";
+  return "#ffa726";
+}
+
+function getValveStatus(v) {
+  const n = parseFloat(v);
+  if (isNaN(n))  return "Unknown";
+  if (n >= 100)  return "Open";
+  if (n <= 0)    return "Closed";
+  return `Throttled (${n}%)`;
+}
+
+// ============================================================
+//  Map + layers
+// ============================================================
+const map = L.map('map', { center: CONFIG.MAP_CENTER, zoom: CONFIG.MAP_ZOOM });
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution:'&copy; <a href="https://carto.com/">CARTO</a>', maxZoom:19
+}).addTo(map);
+
+const pipesLayer  = L.layerGroup().addTo(map);
+const valvesLayer = L.layerGroup(); // NOT added yet — zoom controlled
+const pointsLayer = L.layerGroup().addTo(map);
+
+let valvesEnabled  = true;   // user toggle state
+let valvesOnMap    = false;  // currently added to map?
+let valvesLoaded   = false;  // data loaded?
+
+// ── Layer toggle checkboxes ──
+document.getElementById('tog-pipes').addEventListener('change', e => {
+  e.target.checked ? map.addLayer(pipesLayer) : map.removeLayer(pipesLayer);
+});
+document.getElementById('tog-valves').addEventListener('change', e => {
+  valvesEnabled = e.target.checked;
+  updateValveVisibility();
+});
+document.getElementById('tog-points').addEventListener('change', e => {
+  e.target.checked ? map.addLayer(pointsLayer) : map.removeLayer(pointsLayer);
+});
+
+// ── Zoom-based valve visibility ──
+function updateValveVisibility() {
+  const shouldShow = valvesEnabled && valvesLoaded && map.getZoom() >= CONFIG.VALVE_ZOOM;
+  const zoomPill = document.getElementById('zoom-pill');
+
+  if (shouldShow && !valvesOnMap) {
+    map.addLayer(valvesLayer);
+    valvesOnMap = true;
+    zoomPill.textContent = '● VALVES VISIBLE';
+    zoomPill.style.background = '#0d3b1e';
+    zoomPill.style.color = '#4caf50';
+    zoomPill.style.borderColor = '#2e7d32';
+  } else if (!shouldShow && valvesOnMap) {
+    map.removeLayer(valvesLayer);
+    valvesOnMap = false;
+    zoomPill.textContent = 'ZOOM IN FOR VALVES';
+    zoomPill.style.background = '#1a1a0d';
+    zoomPill.style.color = '#ffa726';
+    zoomPill.style.borderColor = '#e65100';
+  }
+}
+
+map.on('zoomend', updateValveVisibility);
+
+// ============================================================
+//  Load pipes
+// ============================================================
+async function loadPipes() {
+  setDetail("Loading pipes...");
+  try {
+    const resp = await fetch(CONFIG.PIPES_GEOJSON_URL);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const geojson = await resp.json();
+
+    L.geoJSON(geojson, {
+      style: f => ({
+        color:   getAreaColor(f.properties.area),
+        weight:  3,
+        opacity: 0.9,
+      }),
+      onEachFeature: (f, layer) => {
+        const area = f.properties.area || 'Unknown';
+        layer.bindPopup(`
+          <div class="popup-title">AREA — ${area}</div>
+          <div class="popup-row">
+            <span class="popup-label">Zone</span>
+            <span class="popup-value">${area}</span>
+          </div>
+        `);
+      }
+    }).addTo(pipesLayer);
+
+    buildPipeLegend();
+
+    // Auto-fit map to pipe extent
+    try {
+      const bounds = L.geoJSON(geojson).getBounds();
+      map.fitBounds(bounds, { padding:[30,30] });
+    } catch(e) {}
+
+    return geojson.features ? geojson.features.length : 0;
+  } catch(e) {
+    showNotice("⚠ Pipes failed to load — check the URL is publicly accessible");
+    console.error("Pipes error:", e);
+    return 0;
+  }
+}
+
+function buildPipeLegend() {
+  document.getElementById('pipe-legend').innerHTML =
+    Object.entries(areaColorMap)
+      .sort((a,b) => a[0].localeCompare(b[0]))
+      .map(([area, color]) =>
+        `<div class="legend-row">
+          <div class="legend-line" style="background:${color}"></div>
+          <span style="font-size:10px">${area}</span>
+        </div>`
+      ).join('');
+}
+
+// ============================================================
+//  Load valves
+// ============================================================
+async function loadValves() {
+  setDetail("Loading valves...");
+  try {
+    const resp = await fetch(CONFIG.VALVES_GEOJSON_URL);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const geojson = await resp.json();
+
+    L.geoJSON(geojson, {
+      style: f => ({
+        color:   getValveColor(f.properties.joinedopen),
+        weight:  5,
+        opacity: 1,
+      }),
+      onEachFeature: (f, layer) => {
+        const p = f.properties;
+        const statusColor = getValveColor(p.joinedopen);
+        layer.bindPopup(`
+          <div class="popup-title">VALVE — ${p.asset_id || p.iwlive_nam || '—'}</div>
+          <div class="popup-row"><span class="popup-label">Name</span><span class="popup-value">${p.iwlive_nam || '—'}</span></div>
+          <div class="popup-row"><span class="popup-label">Status</span>
+            <span class="popup-value" style="color:${statusColor}">${getValveStatus(p.joinedopen)}</span></div>
+          <div class="popup-row"><span class="popup-label">Opening</span>
+            <span class="popup-value">${p.joinedopen != null ? p.joinedopen + '%' : '—'}</span></div>
+          <div class="popup-row"><span class="popup-label">Type</span><span class="popup-value">${p.construct1 || '—'}</span></div>
+          <div class="popup-row"><span class="popup-label">Diameter</span>
+            <span class="popup-value">${p.valve_diam != null ? p.valve_diam + ' mm' : p.diameter != null ? p.diameter + ' mm' : '—'}</span></div>
+          <div class="popup-row"><span class="popup-label">Area</span><span class="popup-value">${p.area || '—'}</span></div>
+        `);
+      }
+    }).addTo(valvesLayer);
+
+    valvesLoaded = true;
+    updateValveVisibility();
+    return geojson.features ? geojson.features.length : 0;
+  } catch(e) {
+    showNotice("⚠ Valves failed to load — check the URL is publicly accessible");
+    console.error("Valves error:", e);
+    return 0;
+  }
+}
+
+// ============================================================
+//  Load Google Sheet points
+// ============================================================
+async function loadSheetPoints() {
+  if (CONFIG.SHEET_CSV_URL === "YOUR_GOOGLE_SHEET_CSV_URL_HERE") return 0;
+  setDetail("Loading sheet assets...");
+  try {
+    const resp = await fetch(CONFIG.SHEET_CSV_URL);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const rows = parseCSV(await resp.text());
+    let count = 0;
+    rows.forEach(row => {
+      const lat = parseFloat(row[CONFIG.COL_LAT]);
+      const lng = parseFloat(row[CONFIG.COL_LNG]);
+      if (isNaN(lat) || isNaN(lng)) return;
+      const isHydrant = (row[CONFIG.COL_TYPE] || '').toLowerCase().includes('hydrant');
+      const color = isHydrant ? '#ff5252' : '#40c4ff';
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+        <circle cx="11" cy="11" r="8" fill="${color}" fill-opacity="0.85" stroke="white" stroke-width="1.5"/>
+        ${isHydrant
+          ? `<text x="11" y="15" text-anchor="middle" font-size="10" fill="white" font-weight="bold">H</text>`
+          : `<circle cx="11" cy="11" r="3" fill="white"/>`}
+      </svg>`;
+      const icon = L.divIcon({ html:svg, iconSize:[22,22], iconAnchor:[11,11], popupAnchor:[0,-12], className:'' });
+      const statusColor = (row[CONFIG.COL_STATUS]||'').toLowerCase()==='active' ? '#4caf50' : '#ef5350';
+      L.marker([lat, lng], { icon }).bindPopup(`
+        <div class="popup-title">${row[CONFIG.COL_NAME] || 'Asset'}</div>
+        <div class="popup-row"><span class="popup-label">Type</span><span class="popup-value">${row[CONFIG.COL_TYPE] || '—'}</span></div>
+        <div class="popup-row"><span class="popup-label">Status</span>
+          <span class="popup-value" style="color:${statusColor}">${row[CONFIG.COL_STATUS] || '—'}</span></div>
+      `).addTo(pointsLayer);
+      count++;
+    });
+    return count;
+  } catch(e) { return 0; }
+}
+
+// ============================================================
+//  CSV parser
+// ============================================================
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''));
+  return lines.slice(1).map(line => {
+    const vals = line.match(/(".*?"|[^,]+|(?<=,)(?=,)|^(?=,)|(?<=,)$)/g) || [];
+    const obj = {};
+    headers.forEach((h,i) => { obj[h] = (vals[i]||'').replace(/^"|"$/g,'').trim(); });
+    return obj;
+  });
+}
+
+// ============================================================
+//  Helpers
+// ============================================================
+function setDetail(msg) { document.getElementById('loading-detail').textContent = msg; }
+
+function showNotice(msg) {
+  const el = document.getElementById('notice');
+  el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 8000);
+}
+
+// ============================================================
+//  Bootstrap
+// ============================================================
+(async () => {
+  const [pipeCount, valveCount, pointCount] = await Promise.all([
+    loadPipes(), loadValves(), loadSheetPoints()
+  ]);
+  document.getElementById('loading').style.display = 'none';
+
+  const total = pipeCount + valveCount + pointCount;
+  document.getElementById('asset-count').textContent =
+    total > 0
+      ? `${pipeCount} AREAS · ${valveCount} VALVES`
+      : 'CHECK URLS';
+})();
+</script>
+</body>
+</html>
